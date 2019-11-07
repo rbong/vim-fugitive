@@ -1397,13 +1397,21 @@ function! s:FilterEscape(items, ...) abort
   return map(items, 's:fnameescape(v:val)')
 endfunction
 
+function! s:GlobEscape(str) abort
+  return escape(a:str, '\*[?')
+endfunction
+
 function! s:GlobComplete(lead, pattern) abort
   if a:lead ==# '/'
     return []
-  elseif v:version >= 704
-    let results = glob(a:lead . a:pattern, 0, 1)
   else
-    let results = split(glob(a:lead . a:pattern), "\n")
+    let lead = s:GlobEscape(a:lead)
+    if v:version >= 704
+      let g:debug = a:lead . a:pattern
+      let results = glob(lead . a:pattern, 0, 1)
+    else
+      let results = split(glob(lead . a:pattern), "\n")
+    endif
   endif
   call map(results, 'v:val !~# "/$" && isdirectory(v:val) ? v:val."/" : v:val')
   call map(results, 'v:val[ strlen(a:lead) : -1 ]')
@@ -1416,7 +1424,7 @@ function! fugitive#CompletePath(base, ...) abort
   let strip = '^\%(:/:\=\|:(top)\|:(top,literal)\|:(literal,top)\|:(literal)\)'
   let base = substitute(a:base, strip, '', '')
   if base =~# '^\.git/'
-    let pattern = s:gsub(base[5:-1], '/', '*&').'*'
+    let pattern = s:GlobEscape(s:gsub(base[5:-1], '/', '*&')).'*'
     let matches = s:GlobComplete(dir . '/', pattern)
     let cdir = fugitive#CommonDir(dir)
     if len(cdir) && s:cpath(dir) !=# s:cpath(cdir)
@@ -1425,11 +1433,11 @@ function! fugitive#CompletePath(base, ...) abort
     call s:Uniq(matches)
     call map(matches, "'.git/' . v:val")
   elseif base =~# '^\~/'
-    let matches = map(s:GlobComplete(expand('~/'), base[2:-1] . '*'), '"~/" . v:val')
+    let matches = map(s:GlobComplete(expand('~/'), s:GlobEscape(base[2:-1]) . '*'), '"~/" . v:val')
   elseif a:base =~# '^/\|^\a\+:\|^\.\.\=/\|^:(literal)'
-    let matches = s:GlobComplete('', base . '*')
+    let matches = s:GlobComplete('', s:GlobEscape(base) . '*')
   elseif len(tree) > 1
-    let matches = s:GlobComplete(tree, s:gsub(base, '/', '*&').'*')
+    let matches = s:GlobComplete(tree, s:GlobEscape(s:gsub(base, '/', '*&')).'*')
   else
     let matches = []
   endif
@@ -1459,7 +1467,7 @@ function! fugitive#CompleteObject(base, ...) abort
   if a:base =~# '^\.\=/\|^:(' || a:base !~# ':'
     let results = []
     if a:base =~# '^refs/'
-      let results += map(s:GlobComplete(fugitive#CommonDir(dir) . '/', a:base . '*'), 's:Slash(v:val)')
+      let results += map(s:GlobComplete(fugitive#CommonDir(dir) . '/', s:GlobEscape(a:base) . '*'), 's:Slash(v:val)')
     elseif a:base !~# '^\.\=/\|^:('
       let heads = s:CompleteHeads(dir)
       if filereadable(fugitive#Find('.git/refs/stash', dir))
